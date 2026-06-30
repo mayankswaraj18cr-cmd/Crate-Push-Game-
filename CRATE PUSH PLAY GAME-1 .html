@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>CRATE PUSH - Day 1</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { overflow-x: hidden; touch-action: manipulation; }
+  body {
+    background: #0d0d12;
+    color: #eee;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    letter-spacing: 6px;
+    font-size: 28px;
+    margin-bottom: 4px;
+    color: #ffb347;
+  }
+  #sub { color: #888; font-size: 12px; margin-bottom: 16px; }
+  #hud {
+    display: flex;
+    gap: 30px;
+    font-size: 14px;
+    margin-bottom: 14px;
+    color: #9fd3ff;
+  }
+  #board {
+    display: grid;
+    background: #1a1a22;
+    border: 3px solid #333;
+    box-shadow: 0 0 30px rgba(255,179,71,0.08);
+  }
+  .cell {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    font-size: 22px;
+  }
+  .floor { background: #1f1f29; }
+  .wall { background: #3a3a46; border: 1px solid #2a2a33; }
+  .target { background: #1f1f29; }
+  .target::after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ffb347;
+    opacity: 0.5;
+  }
+  .crate { background: #1f1f29; }
+  .crate .box {
+    width: 30px;
+    height: 30px;
+    background: #8a5a2b;
+    border: 2px solid #c98a4b;
+    border-radius: 4px;
+  }
+  .crate.onTarget .box {
+    background: #2e7d32;
+    border-color: #6fcf73;
+  }
+  .player {
+    width: 26px;
+    height: 26px;
+    background: #4fc3f7;
+    border-radius: 50%;
+    border: 2px solid #b3e5fc;
+  }
+  #controls {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(2, 50px);
+    gap: 6px;
+  }
+  #controls button {
+    background: #23232e;
+    border: 1px solid #444;
+    color: #eee;
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  #controls button:active { background: #ffb347; color: #000; }
+  #up { grid-column: 2; grid-row: 1; }
+  #left { grid-column: 1; grid-row: 2; }
+  #down { grid-column: 2; grid-row: 2; }
+  #right { grid-column: 3; grid-row: 2; }
+  #bottomRow {
+    margin-top: 16px;
+    display: flex;
+    gap: 10px;
+  }
+  #bottomRow button {
+    background: #23232e;
+    border: 1px solid #444;
+    color: #eee;
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  #bottomRow button:hover { border-color: #ffb347; }
+  #msg {
+    margin-top: 14px;
+    font-size: 16px;
+    color: #6fcf73;
+    height: 20px;
+    text-align: center;
+  }
+  #instructions {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #666;
+    text-align: center;
+    max-width: 400px;
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 10px; }
+    h1 { font-size: 20px; letter-spacing: 3px; }
+    #sub { font-size: 10px; }
+    #hud { font-size: 11px; gap: 16px; }
+    .cell { width: 30px; height: 30px; font-size: 16px; }
+    .crate .box { width: 22px; height: 22px; }
+    .player { width: 18px; height: 18px; }
+    #controls {
+      grid-template-columns: repeat(3, 46px);
+      grid-template-rows: repeat(2, 46px);
+    }
+    #controls button { font-size: 16px; }
+    #bottomRow { flex-wrap: wrap; justify-content: center; }
+    #bottomRow button { font-size: 11px; padding: 7px 12px; }
+    #instructions { font-size: 10px; padding: 0 10px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>CRATE PUSH</h1>
+<div id="sub">Day 1 - push every crate onto a marker</div>
+
+<div id="hud">
+  <div id="levelLabel">LEVEL 1 / 5</div>
+  <div id="moveLabel">MOVES: 0</div>
+</div>
+
+<div id="board"></div>
+
+<div id="controls">
+  <button id="up">^</button>
+  <button id="left">&lt;</button>
+  <button id="down">v</button>
+  <button id="right">&gt;</button>
+</div>
+
+<div id="bottomRow">
+  <button id="undoBtn">UNDO</button>
+  <button id="resetBtn">RESET</button>
+  <button id="nextBtn">NEXT LEVEL</button>
+  <button id="muteBtn">SOUND: ON</button>
+</div>
+
+<div id="msg"></div>
+<div id="instructions">Arrow keys/WASD or swipe on the board to move. Push crates onto orange markers. U to undo, R to reset.</div>
+
+<script>
+(function () {
+
+  var audioCtx = null;
+  var muted = false;
+  function getCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function beep(freq, duration, type, vol) {
+    if (muted) return;
+    try {
+      var ctx = getCtx();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type || 'square';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(vol || 0.06, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+
+  function sndStep() { beep(180, 0.06, 'square', 0.04); }
+  function sndPush() { beep(110, 0.09, 'sawtooth', 0.06); }
+  function sndBlocked() { beep(80, 0.08, 'square', 0.05); }
+  function sndUndo() { beep(260, 0.07, 'triangle', 0.05); }
+  function sndReset() { beep(200, 0.1, 'triangle', 0.05); }
+  function sndDrop() { beep(330, 0.08, 'sine', 0.06); }
+  function sndWin() {
+    beep(440, 0.12, 'square', 0.07);
+    setTimeout(function () { beep(550, 0.12, 'square', 0.07); }, 110);
+    setTimeout(function () { beep(660, 0.18, 'square', 0.08); }, 220);
+  }
+
+
+  var WALL = '#';
+  var FLOOR = '.';
+  var TARGET = 'o';
+  var CRATE_START = 'c';
+  var CRATE_ON_TARGET_START = 'C';
+  var PLAYER_START = 'p';
+  var PLAYER_ON_TARGET_START = 'P';
+
+  var levels = [
+    [
+      "#######",
+      "#.....#",
+      "#.p.c.#",
+      "#...#.#",
+      "#.o...#",
+      "#.....#",
+      "#######"
+    ],
+    [
+      "########",
+      "#......#",
+      "#.c..o.#",
+      "#.p....#",
+      "#.c..o.#",
+      "#......#",
+      "########"
+    ],
+    [
+      "#########",
+      "#...#...#",
+      "#.c.#.c.#",
+      "#.......#",
+      "#.p.....#",
+      "#.o...o.#",
+      "#########"
+    ],
+    [
+      "##########",
+      "#........#",
+      "#.c.##.c.#",
+      "#..o..o..#",
+      "#....p...#",
+      "#.c.##.c.#",
+      "#..o..o..#",
+      "#........#",
+      "##########"
+    ],
+    [
+      "###########",
+      "#.........#",
+      "#.c.o.c.o.#",
+      "#....p....#",
+      "#.c.o.c.o.#",
+      "#.........#",
+      "###########"
+    ]
+  ];
+
+  var currentLevelIndex = 0;
+  var grid = [];
+  var rows = 0, cols = 0;
+  var player = { x: 0, y: 0 };
+  var crates = [];
+  var targets = [];
+  var moveCount = 0;
+  var history = [];
+  var won = false;
+
+  var boardEl = document.getElementById('board');
+  var msgEl = document.getElementById('msg');
+  var levelLabel = document.getElementById('levelLabel');
+  var moveLabel = document.getElementById('moveLabel');
+
+  function keyOf(x, y) { return x + ',' + y; }
+
+  function loadLevel(idx) {
+    var raw = levels[idx];
+    rows = raw.length;
+    cols = 0;
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i].length > cols) cols = raw[i].length;
+    }
+
+    grid = [];
+    crates = [];
+    targets = [];
+    moveCount = 0;
+    history = [];
+    won = false;
+
+    for (var y = 0; y < rows; y++) {
+      var rowArr = [];
+      var line = raw[y];
+      for (var x = 0; x < cols; x++) {
+        var ch = x < line.length ? line[x] : '#';
+        var tileType = FLOOR;
+
+        if (ch === '#') tileType = WALL;
+        else if (ch === '.') tileType = FLOOR;
+        else if (ch === 'o') { tileType = TARGET; targets.push(keyOf(x, y)); }
+        else if (ch === 'c') { tileType = FLOOR; crates.push({ x: x, y: y }); }
+        else if (ch === 'C') { tileType = TARGET; targets.push(keyOf(x, y)); crates.push({ x: x, y: y }); }
+        else if (ch === 'p') { tileType = FLOOR; player = { x: x, y: y }; }
+        else if (ch === 'P') { tileType = TARGET; targets.push(keyOf(x, y)); player = { x: x, y: y }; }
+
+        rowArr.push(tileType);
+      }
+      grid.push(rowArr);
+    }
+
+    levelLabel.textContent = 'LEVEL ' + (currentLevelIndex + 1) + ' / ' + levels.length;
+    moveLabel.textContent = 'MOVES: 0';
+    msgEl.textContent = '';
+    render();
+  }
+
+  function isWall(x, y) {
+    if (y < 0 || y >= rows || x < 0 || x >= cols) return true;
+    return grid[y][x] === WALL;
+  }
+
+  function crateAt(x, y) {
+    for (var i = 0; i < crates.length; i++) {
+      if (crates[i].x === x && crates[i].y === y) return crates[i];
+    }
+    return null;
+  }
+
+  function isTarget(x, y) {
+    return targets.indexOf(keyOf(x, y)) !== -1;
+  }
+
+  function checkWin() {
+    for (var i = 0; i < crates.length; i++) {
+      if (!isTarget(crates[i].x, crates[i].y)) return false;
+    }
+    return true;
+  }
+
+  function snapshot() {
+    return {
+      player: { x: player.x, y: player.y },
+      crates: crates.map(function (c) { return { x: c.x, y: c.y }; }),
+      moveCount: moveCount
+    };
+  }
+
+  function move(dx, dy) {
+    if (won) return;
+
+    var nx = player.x + dx;
+    var ny = player.y + dy;
+
+    if (isWall(nx, ny)) { sndBlocked(); return; }
+
+    var crate = crateAt(nx, ny);
+    if (crate) {
+      var cnx = nx + dx;
+      var cny = ny + dy;
+      if (isWall(cnx, cny) || crateAt(cnx, cny)) { sndBlocked(); return; }
+
+      history.push(snapshot());
+      crate.x = cnx;
+      crate.y = cny;
+      player.x = nx;
+      player.y = ny;
+      moveCount++;
+      if (isTarget(cnx, cny)) sndDrop(); else sndPush();
+    } else {
+      history.push(snapshot());
+      player.x = nx;
+      player.y = ny;
+      moveCount++;
+      sndStep();
+    }
+
+    moveLabel.textContent = 'MOVES: ' + moveCount;
+
+    if (checkWin()) {
+      won = true;
+      msgEl.textContent = 'SOLVED! Click NEXT LEVEL.';
+      sndWin();
+    }
+
+    render();
+  }
+
+  function undo() {
+    if (history.length === 0) return;
+    var state = history.pop();
+    player = state.player;
+    crates = state.crates;
+    moveCount = state.moveCount;
+    won = false;
+    msgEl.textContent = '';
+    moveLabel.textContent = 'MOVES: ' + moveCount;
+    sndUndo();
+    render();
+  }
+
+  function render() {
+    boardEl.style.gridTemplateColumns = 'repeat(' + cols + ', 40px)';
+    boardEl.style.gridTemplateRows = 'repeat(' + rows + ', 40px)';
+    boardEl.innerHTML = '';
+
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        var cell = document.createElement('div');
+        var tile = grid[y][x];
+        var classes = ['cell'];
+
+        if (tile === WALL) classes.push('wall');
+        else if (tile === TARGET) classes.push('target');
+        else classes.push('floor');
+
+        var crate = crateAt(x, y);
+        if (crate) {
+          classes.push('crate');
+          if (isTarget(x, y)) classes.push('onTarget');
+        }
+
+        cell.className = classes.join(' ');
+
+        if (crate) {
+          var box = document.createElement('div');
+          box.className = 'box';
+          cell.appendChild(box);
+        }
+
+        if (player.x === x && player.y === y) {
+          var p = document.createElement('div');
+          p.className = 'player';
+          cell.appendChild(p);
+        }
+
+        boardEl.appendChild(cell);
+      }
+    }
+  }
+
+  function nextLevel() {
+    currentLevelIndex = (currentLevelIndex + 1) % levels.length;
+    loadLevel(currentLevelIndex);
+  }
+
+  document.getElementById('up').addEventListener('click', function () { move(0, -1); });
+  document.getElementById('down').addEventListener('click', function () { move(0, 1); });
+  document.getElementById('left').addEventListener('click', function () { move(-1, 0); });
+  document.getElementById('right').addEventListener('click', function () { move(1, 0); });
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('resetBtn').addEventListener('click', function () { sndReset(); loadLevel(currentLevelIndex); });
+  document.getElementById('nextBtn').addEventListener('click', nextLevel);
+
+  document.getElementById('muteBtn').addEventListener('click', function () {
+    muted = !muted;
+    this.textContent = muted ? 'SOUND: OFF' : 'SOUND: ON';
+  });
+
+  function unlockAudio() {
+    try {
+      var ctx = getCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch (e) {}
+    document.removeEventListener('touchstart', unlockAudio);
+    document.removeEventListener('click', unlockAudio);
+  }
+  document.addEventListener('touchstart', unlockAudio, { once: true });
+  document.addEventListener('click', unlockAudio, { once: true });
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.key.toLowerCase();
+    if (k === 'arrowup' || k === 'w') { move(0, -1); e.preventDefault(); }
+    else if (k === 'arrowdown' || k === 's') { move(0, 1); e.preventDefault(); }
+    else if (k === 'arrowleft' || k === 'a') { move(-1, 0); e.preventDefault(); }
+    else if (k === 'arrowright' || k === 'd') { move(1, 0); e.preventDefault(); }
+    else if (k === 'u') { undo(); }
+    else if (k === 'r') { loadLevel(currentLevelIndex); }
+  });
+
+  var touchStartX = 0, touchStartY = 0;
+  boardEl.addEventListener('touchstart', function (e) {
+    var t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+  }, { passive: true });
+
+  boardEl.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0];
+    var dx = t.clientX - touchStartX;
+    var dy = t.clientY - touchStartY;
+    var absX = Math.abs(dx), absY = Math.abs(dy);
+    var threshold = 24;
+
+    if (Math.max(absX, absY) < threshold) return;
+
+    if (absX > absY) {
+      if (dx > 0) move(1, 0); else move(-1, 0);
+    } else {
+      if (dy > 0) move(0, 1); else move(0, -1);
+    }
+  }, { passive: true });
+
+  loadLevel(currentLevelIndex);
+
+})();
+</script>
+
+</body>
+</html>
